@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Web BLE App</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+</head>
+
+<body>
+    <h1>ESP32 Web BLE Application</h1>
+
+    <button id="connectBleButton">Connect BLE</button>
+    <button id="disconnectBleButton">Disconnect BLE</button>
+
+    <p>BLE state: <span id="bleState">Disconnected</span></p>
+
+    <h2>Temperature (°C)</h2>
+    <p id="valueContainer">NaN</p>
+    <p>Last reading: <span id="timestamp"></span></p>
+
+    <h2>Control LED (GPIO 2)</h2>
+    <button id="onButton">ON</button>
+    <button id="offButton">OFF</button>
+    <p>Last value sent: <span id="valueSent"></span></p>
+
+<script>
+const connectButton = document.getElementById('connectBleButton');
+const disconnectButton = document.getElementById('disconnectBleButton');
+const onButton = document.getElementById('onButton');
+const offButton = document.getElementById('offButton');
+
+const retrievedValue = document.getElementById('valueContainer');
+const latestValueSent = document.getElementById('valueSent');
+const bleStateContainer = document.getElementById('bleState');
+const timestampContainer = document.getElementById('timestamp');
+
+// BLE UUID
+const deviceName = 'ESP32web';
+const bleService = '19b10000-e8f2-537e-4f6c-d104768a1214';
+const sensorCharacteristic = '19b10001-e8f2-537e-4f6c-d104768a1214';
+const ledCharacteristic = '19b10002-e8f2-537e-4f6c-d104768a1214';
+
+let bleServer;
+let bleServiceFound;
+let sensorCharacteristicFound;
+
+connectButton.onclick = () => {
+    navigator.bluetooth.requestDevice({
+        filters: [{ name: deviceName }],
+        optionalServices: [bleService]
+    })
+    .then(device => {
+        bleStateContainer.textContent = "Connected";
+        return device.gatt.connect();
+    })
+    .then(server => {
+        bleServer = server;
+        return server.getPrimaryService(bleService);
+    })
+    .then(service => {
+        bleServiceFound = service;
+        return service.getCharacteristic(sensorCharacteristic);
+    })
+    .then(characteristic => {
+        sensorCharacteristicFound = characteristic;
+        characteristic.startNotifications();
+        characteristic.addEventListener('characteristicvaluechanged', e => {
+            const value = new TextDecoder().decode(e.target.value);
+            retrievedValue.textContent = value;
+            timestampContainer.textContent = new Date().toLocaleString();
+        });
+    });
+};
+
+disconnectButton.onclick = () => {
+    if (bleServer && bleServer.connected) {
+        bleServer.disconnect();
+        bleStateContainer.textContent = "Disconnected";
+    }
+};
+
+onButton.onclick = () => writeLed(1);
+offButton.onclick = () => writeLed(0);
+
+function writeLed(value) {
+    if (!bleServiceFound) return;
+    bleServiceFound.getCharacteristic(ledCharacteristic)
+    .then(c => c.writeValue(new Uint8Array([value])))
+    .then(() => latestValueSent.textContent = value);
+}
+</script>
+
+</body>
+</html>
