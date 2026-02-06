@@ -14,7 +14,6 @@
   <h1>ESP32 BLE Temperature</h1>
 </div>
 
-
 <div class="content">
 
 <!-- CONNECT -->
@@ -33,7 +32,6 @@ BLE state:
 </p>
 
 </div>
-
 </div>
 
 
@@ -137,25 +135,27 @@ document.getElementById("disconnect").onclick = () => {
 /* ===== RECEIVE DATA ===== */
 function handleData(event){
 
-  let text = new TextDecoder().decode(event.target.value);
+  let text = new TextDecoder().decode(event.target.value).trim();
 
   console.log("RAW:", text);
 
   let arr = text.split(",");
 
-  if(arr.length < 4) return;
+  if(arr.length < 2) return;
 
-  let tempC = arr[2];
-  let tempF = arr[3];
+  let tempC = arr[0];
+  let tempF = arr[1];
 
-  // TEMP
-  if(tempC=="NAN" || tempC=="-999"){
+  if(isNaN(tempC) || isNaN(tempF)){
     document.getElementById("tempC").innerText="--";
     document.getElementById("tempF").innerText="--";
   }
   else{
-    document.getElementById("tempC").innerText=tempC;
-    document.getElementById("tempF").innerText=tempF;
+    document.getElementById("tempC").innerText =
+      parseFloat(tempC).toFixed(2);
+
+    document.getElementById("tempF").innerText =
+      parseFloat(tempF).toFixed(2);
   }
 
 }
