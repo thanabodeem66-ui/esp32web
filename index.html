@@ -1,93 +1,182 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ESP32 Web BLE App</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta charset="UTF-8">
+  <title>ESP32 BLE Temperature</title>
+  <meta charset="UTF-8">
+
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <h1>ESP32 Web BLE Application</h1>
 
-    <button id="connectBleButton">Connect BLE</button>
-    <button id="disconnectBleButton">Disconnect BLE</button>
+<!-- TOP BAR -->
+<div class="topnav">
+  <h1>ESP32 BLE Temperature</h1>
+</div>
 
-    <p>BLE state: <span id="bleState">Disconnected</span></p>
 
-    <h2>Temperature (°C)</h2>
-    <p id="valueContainer">NaN</p>
-    <p>Last reading: <span id="timestamp"></span></p>
+<div class="content">
 
-    <h2>Control LED (GPIO 2)</h2>
-    <button id="onButton">ON</button>
-    <button id="offButton">OFF</button>
-    <p>Last value sent: <span id="valueSent"></span></p>
+<!-- CONNECT -->
+<div class="card-grid">
 
+<div class="card">
+
+<button id="connect" class="connectButton">Connect</button>
+<button id="disconnect" class="disconnectButton">Disconnect</button>
+
+<p class="gray-label">
+BLE state:
+<strong>
+<span id="state" style="color:red;">Disconnected</span>
+</strong>
+</p>
+
+</div>
+
+</div>
+
+
+<!-- TEMPERATURE -->
+<div class="card-grid">
+
+<div class="card">
+
+<h2>🌡 Temperature</h2>
+
+<p class="reading">
+<span id="tempC">--</span> °C
+</p>
+
+<p class="gray-label">
+(<span id="tempF">--</span> °F)
+</p>
+
+</div>
+
+</div>
+
+
+<!-- LED -->
+<div class="card-grid">
+
+<div class="card">
+
+<h2>💡 LED</h2>
+
+<button class="onButton" onclick="ledOn()">ON</button>
+<button class="offButton" onclick="ledOff()">OFF</button>
+
+</div>
+
+</div>
+
+</div>
+
+
+<!-- ================= JS ================= -->
 <script>
-const connectButton = document.getElementById('connectBleButton');
-const disconnectButton = document.getElementById('disconnectBleButton');
-const onButton = document.getElementById('onButton');
-const offButton = document.getElementById('offButton');
 
-const retrievedValue = document.getElementById('valueContainer');
-const latestValueSent = document.getElementById('valueSent');
-const bleStateContainer = document.getElementById('bleState');
-const timestampContainer = document.getElementById('timestamp');
+/* ===== BLE UUID ===== */
+const serviceUUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
+const dataUUID    = "19b10002-e8f2-537e-4f6c-d104768a1214";
+const ledUUID     = "19b10001-e8f2-537e-4f6c-d104768a1214";
 
-// BLE UUID
-const deviceName = 'ESP32web';
-const bleService = '19b10000-e8f2-537e-4f6c-d104768a1214';
-const ledCharacteristic = '19b10001-e8f2-537e-4f6c-d104768a1214';
-const sensorCharacteristic = '19b10002-e8f2-537e-4f6c-d104768a1214';
 
 let bleServer;
-let bleServiceFound;
-let sensorCharacteristicFound;
+let dataChar;
+let ledChar;
 
-connectButton.onclick = () => {
-    navigator.bluetooth.requestDevice({
-        filters: [{ name: deviceName }],
-        optionalServices: [bleService]
-    })
-    .then(device => {
-        bleStateContainer.textContent = "Connected";
-        return device.gatt.connect();
-    })
-    .then(server => {
-        bleServer = server;
-        return server.getPrimaryService(bleService);
-    })
-    .then(service => {
-        bleServiceFound = service;
-        return service.getCharacteristic(sensorCharacteristic);
-    })
-    .then(characteristic => {
-        sensorCharacteristicFound = characteristic;
-        characteristic.startNotifications();
-        characteristic.addEventListener('characteristicvaluechanged', e => {
-            const value = new TextDecoder().decode(e.target.value);
-            retrievedValue.textContent = value;
-            timestampContainer.textContent = new Date().toLocaleString();
-        });
+
+/* ===== CONNECT ===== */
+document.getElementById("connect").onclick = async () => {
+
+  try {
+
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: "ESP32web" }],
+      optionalServices: [serviceUUID]
     });
+
+    const server = await device.gatt.connect();
+
+    bleServer = server;
+
+    document.getElementById("state").innerText = "Connected";
+    document.getElementById("state").style.color = "green";
+
+    const service = await server.getPrimaryService(serviceUUID);
+
+    dataChar = await service.getCharacteristic(dataUUID);
+    ledChar  = await service.getCharacteristic(ledUUID);
+
+    await dataChar.startNotifications();
+
+    dataChar.oncharacteristicvaluechanged = handleData;
+
+  }
+  catch(err){
+    alert("Connect Error");
+    console.log(err);
+  }
 };
 
-disconnectButton.onclick = () => {
-    if (bleServer && bleServer.connected) {
-        bleServer.disconnect();
-        bleStateContainer.textContent = "Disconnected";
-    }
+
+/* ===== DISCONNECT ===== */
+document.getElementById("disconnect").onclick = () => {
+
+  if(bleServer){
+    bleServer.disconnect();
+  }
+
+  document.getElementById("state").innerText = "Disconnected";
+  document.getElementById("state").style.color = "red";
 };
 
-onButton.onclick = () => writeLed(1);
-offButton.onclick = () => writeLed(0);
 
-function writeLed(value) {
-    if (!bleServiceFound) return;
-    bleServiceFound.getCharacteristic(ledCharacteristic)
-    .then(c => c.writeValue(new Uint8Array([value])))
-    .then(() => latestValueSent.textContent = value);
+/* ===== RECEIVE DATA ===== */
+function handleData(event){
+
+  let text = new TextDecoder().decode(event.target.value);
+
+  console.log("RAW:", text);
+
+  let arr = text.split(",");
+
+  if(arr.length < 4) return;
+
+  let tempC = arr[2];
+  let tempF = arr[3];
+
+  // TEMP
+  if(tempC=="NAN" || tempC=="-999"){
+    document.getElementById("tempC").innerText="--";
+    document.getElementById("tempF").innerText="--";
+  }
+  else{
+    document.getElementById("tempC").innerText=tempC;
+    document.getElementById("tempF").innerText=tempF;
+  }
+
 }
+
+
+/* ===== LED ===== */
+async function ledOn(){
+
+  if(!ledChar) return;
+
+  await ledChar.writeValue(Uint8Array.of(1));
+}
+
+
+async function ledOff(){
+
+  if(!ledChar) return;
+
+  await ledChar.writeValue(Uint8Array.of(0));
+}
+
 </script>
 
 </body>
